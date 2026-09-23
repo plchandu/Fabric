@@ -1,0 +1,97 @@
+/*
+===================================================================================================
+Power BI Direct Lake Semantic Model: Financial Executive Measures
+Model: IPS_Enterprise_Financial_Semantic_Model
+Dataset Mode: Direct Lake (OneLake Delta Parquet)
+Performance Target: Sub-800ms Query SLA without import refresh
+===================================================================================================
+*/
+
+// --- Core Revenue & Profitability Measures ---
+
+[Total Actual Amount] = 
+SUM('Fact_GeneralLedger'[amount_domestic])
+
+[Total Revenue] = 
+CALCULATE(
+    -[Total Actual Amount],
+    'Dim_Account'[object_account] >= "5000" && 'Dim_Account'[object_account] <= "5999"
+)
+
+[Total COGS] = 
+CALCULATE(
+    [Total Actual Amount],
+    'Dim_Account'[object_account] >= "6000" && 'Dim_Account'[object_account] <= "6999"
+)
+
+[Gross Profit] = 
+[Total Revenue] - [Total COGS]
+
+[Gross Margin %] = 
+DIVIDE([Gross Profit], [Total Revenue], 0)
+
+[Operating Expenses] = 
+CALCULATE(
+    [Total Actual Amount],
+    'Dim_Account'[object_account] >= "7000" && 'Dim_Account'[object_account] <= "8999"
+)
+
+[EBITDA] = 
+[Gross Profit] - [Operating Expenses]
+
+[EBITDA Margin %] = 
+DIVIDE([EBITDA], [Total Revenue], 0)
+
+// --- Working Capital & Cash Velocity Measures ---
+
+[Total Accounts Receivable] = 
+CALCULATE(
+    SUM('Fact_AR_Ledger'[open_amount_domestic]),
+    'Fact_AR_Ledger'[is_open] = TRUE()
+)
+
+[Total Accounts Payable] = 
+CALCULATE(
+    SUM('Fact_AP_Ledger'[open_amount_domestic]),
+    'Fact_AP_Ledger'[is_open] = TRUE()
+)
+
+[Days Sales Outstanding (DSO)] = 
+VAR TotalSalesLast365 = 
+    CALCULATE(
+        [Total Revenue],
+        DATESINPERIOD('Dim_Date'[CalendarDate], MAX('Dim_Date'[CalendarDate]), -365, DAY)
+    )
+RETURN
+    DIVIDE([Total Accounts Receivable] * 365, TotalSalesLast365, 0)
+
+[Days Payable Outstanding (DPO)] = 
+VAR TotalCOGSPast365 = 
+    CALCULATE(
+        [Total COGS],
+        DATESINPERIOD('Dim_Date'[CalendarDate], MAX('Dim_Date'[CalendarDate]), -365, DAY)
+    )
+RETURN
+    DIVIDE([Total Accounts Payable] * 365, TotalCOGSPast365, 0)
+
+// --- Budget vs Actual Variance ---
+
+[Total Budget Amount] = 
+SUM('Fact_Budget'[budget_amount_domestic])
+
+[Budget Variance Amount] = 
+[Total Actual Amount] - [Total Budget Amount]
+
+[Budget Variance %] = 
+DIVIDE([Budget Variance Amount], [Total Budget Amount], 0)
+
+// --- Time Intelligence (YoY & YTD) ---
+
+[Revenue YTD] = 
+TOTALYTD([Total Revenue], 'Dim_Date'[CalendarDate])
+
+[Revenue Prior Year] = 
+CALCULATE([Total Revenue], SAMEPERIODLASTYEAR('Dim_Date'[CalendarDate]))
+
+[Revenue YoY Growth %] = 
+DIVIDE([Total Revenue] - [Revenue Prior Year], [Revenue Prior Year], 0)

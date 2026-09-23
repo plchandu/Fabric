@@ -1,0 +1,20 @@
+# Core Data Processing & Transformation
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0
+
+# Microsoft Fabric & Azure Integration
+azure-identity>=1.15.0
+azure-mgmt-resource>=23.0.0
+azure-storage-blob>=12.19.0
+requests>=2.31.0
+
+# Delta Lake & PySpark Testing (Local dev/testing of notebook logic)
+pyspark>=3.5.0
+delta-spark>=3.0.0
+
+# Code Quality & Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+flake8>=6.1.0
+black>=23.9.0

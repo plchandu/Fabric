@@ -1,0 +1,13 @@
+DRSY,DRRT,DRKY,DRDL01,DRDL02
+00,DT,JE,General Journal Entry,Financial Ledger
+00,DT,RI,Standard Invoice,Accounts Receivable
+00,DT,RM,Credit Memo / Reversal,Accounts Receivable
+00,DT,RB,Receipt / Cash Application,Accounts Receivable
+00,DT,PV,Accounts Payable Voucher,Accounts Payable
+00,DT,PN,Manual Check Payment,Accounts Payable
+00,DT,PK,Auto Check / Electronic Payment,Accounts Payable
+01,ST,C,Customer,Address Book Search Type
+01,ST,V,Supplier / Vendor,Address Book Search Type
+01,ST,E,Employee,Address Book Search Type
+00,LT,AA,Actual Amounts Ledger,Primary Balance Ledger
+00,LT,CA,Foreign Currency Ledger,Currency Tracking

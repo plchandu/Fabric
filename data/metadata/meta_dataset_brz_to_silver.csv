@@ -1,0 +1,11 @@
+dataset_id,source_system,source_schema,source_table,target_lakehouse,target_table,ingestion_mode,primary_business_keys,julian_date_columns,currency_column,unscaled_amount_columns,watermark_column,is_active
+1,AS400_DB2,CRPOTA,F0911,lh_silver,General_Ledger,Batch,"GLKCO,GLDCT,GLDOC,GLDGJ,GLJELN","GLDGJ,GLDICJ,GLDSAV",GLCRCD,"GLAA,GLACR",GLDSAV,1
+2,AS400_DB2,CRPOTA,F0901,lh_silver,DIM_Account,Batch,GMAID,,,,,1
+3,AS400_DB2,CRPOTA,F03012,lh_silver,DIM_Customer,Batch,"AIAN8,AICO","AIEFTB,AIEFTE",AICRCA,AICRAL,,1
+4,AS400_DB2,CRPOTA,F03B11,lh_silver,Accounts_Receivable_Ledger,NRT,"RPDOC,RPDCT,RPKCO,RPSFX","RPDGJ,RPDIVJ",RPCRCD,"RPAG,RPAAP",RPDGJ,1
+5,AS400_DB2,CRPOTA,F0401,lh_silver,DIM_Supplier,Batch,"A6AN8,A6CO",,A6CRCA,,,1
+6,AS400_DB2,CRPOTA,F0411,lh_silver,Accounts_Payable_Ledger,NRT,"RPDOC,RPDCT,RPKCO,RPSFX","RPDIVJ,RPDDJ",RPCRCD,"RPAG,RPAAP",RPDIVJ,1
+7,AS400_DB2,CRPOTA,F0010,lh_silver,DIM_Company,Batch,CCCO,CCDSD,CCCRCD,,,1
+8,AS400_DB2,CRPCTL,F0005,lh_silver,DIM_User_Defined_Codes,Batch,"DRSY,DRRT,DRKY",,,,,1
+9,AS400_DB2,CRPOTA,F1201,lh_silver,DIM_Asset,Batch,FA#UMB,FAINSD,,,,1
+10,AS400_DB2,CRPOTA,F1202,lh_silver,DIM_Asset_Account_Balance,Batch,"FA#UMB,FACO,FAFY,FALEDG",,,"FAHISTCOST,FAACCDEP,FANETBKVAL",,1

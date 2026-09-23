@@ -1,0 +1,11 @@
+rule_id,dataset_id,target_table,column_name,check_type,rule_condition,severity,description
+101,1,General_Ledger,document_number,MANDATORY_PK,document_number IS NOT NULL AND document_number > 0,STOP,Halts execution if primary document number is missing
+102,1,General_Ledger,gl_date,VALID_JULIAN_RANGE,gl_date IS NOT NULL AND gl_date BETWEEN 90001 AND 199366,QUARANTINE,Routes malformed Julian dates (<1990 or >2099 or day>366) to quarantine
+103,1,General_Ledger,amount,NON_ZERO_BALANCE,amount != 0.00,WARNING,Alerts on zero-dollar GL journal lines
+104,1,General_Ledger,company_code,NOT_BLANK,length(trim(company_code)) > 0,QUARANTINE,Routes lines with missing company codes to quarantine
+105,1,General_Ledger,currency_code,VALID_CURRENCY,"currency_code IN ('USD','CAD','EUR','GBP','JPY','BRL','KWD')",QUARANTINE,Ensures currency code exists in F0013 ISO master
+201,4,Accounts_Receivable_Ledger,invoice_due_date,DATE_CHRONOLOGY,invoice_due_date >= invoice_date,QUARANTINE,Invoice due date cannot be earlier than invoice creation date
+202,4,Accounts_Receivable_Ledger,open_amount,AMOUNT_LOGIC,abs(open_amount) <= abs(gross_amount),QUARANTINE,Open amount cannot exceed gross transaction amount
+301,3,DIM_Customer,credit_limit,NON_NEGATIVE,credit_limit >= 0,WARNING,Flags customers with negative credit limits
+302,3,DIM_Customer,customer_address_number,MANDATORY_PK,customer_address_number IS NOT NULL AND customer_address_number > 0,STOP,Customer address number must be positive and non-null
+401,10,DIM_Asset_Account_Balance,accumulated_depreciation,ASSET_BOOK_VALUE,accumulated_depreciation <= historical_cost,QUARANTINE,Accumulated depreciation cannot exceed original historical acquisition cost

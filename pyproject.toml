@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ips-fabric-modernization"
+version = "1.0.0"
+description = "Enterprise Data Platform Modernization: AS400 DB2 ERP to Microsoft Fabric & Power BI Direct Lake"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Fabric Lead Engineer", email = "fabricadmin@plchandugcp48gmail.onmicrosoft.com" }
+]
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "pyarrow>=14.0.0",
+    "azure-identity>=1.15.0",
+    "requests>=2.31.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.9.0",
+    "flake8>=6.1.0"
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+testpaths = [
+    "tests",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+include = '\.pyi?$'

@@ -1,0 +1,4 @@
+company_code,business_unit,object_account,fiscal_year,fiscal_period,budget_amount_usd
+00010,100010,5010,2026,1,INVALID_AMOUNT
+,100010,5010,2026,2,475000.00
+00010,100010,5010,2099,99,-5000.00
