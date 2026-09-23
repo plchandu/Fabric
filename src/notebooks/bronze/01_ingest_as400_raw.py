@@ -55,7 +55,17 @@ if __name__ == "__main__":
         {"file": "CRPCTL.F0015_Currency_Exchange_Rates.csv", "table": "raw_f0015_currency_rates"}
     ]
     
-    base_landing_path = "Files/Landing/AS400/"
+    # In Microsoft Fabric, files in the attached Lakehouse are mounted at /lakehouse/default/Files/
+    import os
+    if os.path.exists("/lakehouse/default/Files/Landing/AS400"):
+        base_landing_path = "/lakehouse/default/Files/Landing/AS400/"
+    elif os.path.exists("/lakehouse/default/Files/AS400"):
+        base_landing_path = "/lakehouse/default/Files/AS400/"
+    else:
+        base_landing_path = "/lakehouse/default/Files/"
+
+    print(f"Using OneLake Mounted Landing Path: {base_landing_path}")
+
     for item in as400_tables:
         source = f"{base_landing_path}{item['file']}"
         try:
