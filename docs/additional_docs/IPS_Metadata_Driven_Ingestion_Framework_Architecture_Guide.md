@@ -66,6 +66,12 @@ Instead of building hardcoded, static pipelines for every source table, this fra
 
 Developers configure new datasets, execution schedules, data quality rules, and transformation logic using a pre-validated Excel template (`Ingestion_metadata_load_template.xlsx`). This workbook is automatically staged and merged into the production metadata repository using automated stored procedures.
 
+> [!IMPORTANT]
+> **Core Architectural Governance Principles:**  
+> All pipeline orchestration and data modeling within this framework must adhere to the three foundational tenets of the modernization program: **(1) Business First, Technology Second**, **(2) Single Source of Truth**, and **(3) Mandatory Medallion Architecture**. For the full governance charter, see:  
+> 👉 **[Core Architecture Design Tenets & Governance Principles Guide](file:///Users/chandu/Documents/Python_practice/Fabric/docs/additional_docs/IPS_BI_Core_Architecture_Design_Tenets_and_Governance_Principles.md)**.
+
+
 ---
 
 ## 2. Framework Architecture & Design
@@ -143,33 +149,133 @@ The repository isolates responsibilities into four distinct database schemas:
 
 ---
 
-## 3. Entity Relationship Diagram (ERD)
+## 3. Entity Relationship Diagram (ERD) & Relational Data Model
+
+![Metadata-Driven Ingestion Framework - Physical Database Entity Relationship Diagram (ERD)](/Users/chandu/Documents/Python_practice/Fabric/images/60_metadata_framework_physical_database_erd_diagram.png)
+
+The metadata repository database (`sqldb-meta-orch-dev`) is engineered around a normalized, highly extensible relational data model designed to separate pipeline orchestration configuration, runtime execution state, data quality evaluation, and observability logging.
+
+### 3.1 Five Functional Architectural Tiers
+
+```mermaid
+flowchart TD
+    subgraph Tier1["1. Scheduling & Orchestration Tier"]
+        SCH[meta_schedule] -->|1:M schedule_id| IG[meta_ingestion_group]
+        IG -->|1:M ingestion_group_id| IGD[meta_ingestion_group_dataset]
+    end
+
+    subgraph Tier2["2. Source & Dataset Core Registry"]
+        SRC[meta_source_system] -->|1:M source_system_id| DS[meta_dataset]
+        DS -->|1:M dataset_id| IGD
+    end
+
+    subgraph Tier3["3. Medallion Subtype Extensions (1:1)"]
+        DS -->|1:1 dataset_id| S2B[meta_dataset_src_to_brnz]
+        DS -->|1:1 dataset_id| B2S[meta_dataset_brnz_to_silver]
+        DS -->|1:1 dataset_id| S2G[meta_dataset_silver_to_gold]
+    end
+
+    subgraph Tier4["4. Runtime Control State Tier (1:1)"]
+        DS -->|1:1 dataset_id| CDS[ctl_dataset_state]
+        DS -->|1:1 dataset_id| CWS[ctl_watermark_state]
+    end
+
+    subgraph Tier5["5. Data Quality & Observability Logging Hierarchy"]
+        DS -->|1:M dataset_id| DQR[meta_dataquality_rule]
+        PLR[log_pipeline_run] -->|1:M pipeline_run_id| DSR[log_dataset_run]
+        DS -->|1:M dataset_id| DSR
+        DSR -->|1:M dataset_run_id| DQL[log_dq_rule_run]
+        DQR -->|1:M dq_rule_id| DQL
+        DSR -->|1:M dataset_run_id| ERR[log_error_event]
+        PLR -.->|1:M pipeline_run_id| ERR
+    end
+
+    style Tier1 fill:#f0f7ff,stroke:#0078d4,stroke-width:2px
+    style Tier2 fill:#e6f2ff,stroke:#106ebe,stroke-width:2px
+    style Tier3 fill:#fef9e7,stroke:#ffb900,stroke-width:2px
+    style Tier4 fill:#fdf3f2,stroke:#d13438,stroke-width:2px
+    style Tier5 fill:#f3f9f1,stroke:#107c10,stroke-width:2px
+```
+
+The database structure is organized into five tightly coupled functional domains:
+
+1. **Scheduling & Group Orchestration Tier (`meta_schedule`, `meta_ingestion_group`, `meta_ingestion_group_dataset`)**:
+   * Decouples cron/recurrence triggers from physical tables.
+   * Enables batching of 97+ ERP tables into logical execution waves (e.g., `GRP_AS400_JDE_CORE_MASTER_DAILY`, `GRP_AS400_JDE_TRANSACTIONS_HOURLY`) managed via associative bridge table `meta_ingestion_group_dataset`.
+2. **Source System & Core Dataset Registry (`meta_source_system`, `meta_dataset`)**:
+   * `meta_source_system` tracks physical enterprise hosts (e.g., IBM AS400 DB2 `CRPDTA`, Salesforce CRM, Flat File SFTP).
+   * `meta_dataset` acts as the conformed master registry entity for all tables, views, and data products.
+3. **Medallion Pipeline Subtype Extension Tier (`meta_dataset_src_to_brnz`, `meta_dataset_brnz_to_silver`, `meta_dataset_silver_to_gold`)**:
+   * Employs strict **1:1 table subtype relationships** keyed directly by `dataset_id`.
+   * Isolates layer-specific transformation parameters (e.g., source queries, delta merge conditions, SCD Type 2 tracking, and star schema dimensional mappings) without polluting the parent catalog entity.
+4. **Runtime Control State Tier (`ctl_dataset_state`, `ctl_watermark_state`)**:
+   * Implements strict **1:1 operational state tracking** per dataset.
+   * `ctl_dataset_state` manages operational locks (`IN_PROGRESS`, `SUCCESS`, `FAILED`) and high-watermark run timestamps to prevent race conditions during concurrent pipeline executions.
+   * `ctl_watermark_state` isolates incremental extraction boundaries (such as JDE Julian dates or CDC transaction IDs).
+5. **Data Quality & Observability Logging Hierarchy (`meta_dataquality_rule`, `log_pipeline_run`, `log_dataset_run`, `log_dq_rule_run`, `log_error_event`)**:
+   * Implements a 3-tier hierarchical logging structure.
+   * Every orchestrator pipeline execution registers in `log_pipeline_run`, which spawns multiple granular `log_dataset_run` records.
+   * Each dataset run tracks exact row counts (`rows_read`, `rows_inserted`, `rows_updated`, `rows_rejected`) and links directly to individual rule-level audit logs in `log_dq_rule_run` and diagnostic stack traces in `log_error_event`.
+
+---
+
+### 3.2 Full Physical Database Entity Relationship Diagram (ERD)
 
 ```mermaid
 erDiagram
-    meta_source_system ||--o{ meta_dataset : "hosts"
-    meta_schedule ||--o{ meta_ingestion_group : "triggers"
-    meta_ingestion_group ||--o{ meta_ingestion_group_dataset : "groups"
-    meta_dataset ||--o{ meta_ingestion_group_dataset : "assigned_to"
+    meta_schedule ||--o{ meta_ingestion_group : "1:M schedule_id"
+    meta_source_system ||--o{ meta_dataset : "1:M source_system_id"
+    meta_ingestion_group ||--o{ meta_ingestion_group_dataset : "1:M ingestion_group_id"
+    meta_dataset ||--o{ meta_ingestion_group_dataset : "1:M dataset_id"
 
-    meta_dataset ||--o| meta_dataset_src_to_brnz : "1:1 Subtype"
-    meta_dataset ||--o| meta_dataset_brnz_to_silver : "1:1 Subtype"
-    meta_dataset ||--o| meta_dataset_silver_to_gold : "1:1 Subtype"
-    meta_dataset ||--o{ meta_dataquality_rule : "evaluates"
+    meta_dataset ||--|| meta_dataset_src_to_brnz : "1:1 dataset_id (Subtype)"
+    meta_dataset ||--|| meta_dataset_brnz_to_silver : "1:1 dataset_id (Subtype)"
+    meta_dataset ||--|| meta_dataset_silver_to_gold : "1:1 dataset_id (Subtype)"
+    meta_dataset ||--|| ctl_dataset_state : "1:1 dataset_id (State)"
+    meta_dataset ||--|| ctl_watermark_state : "1:1 dataset_id (Watermark)"
 
-    meta_dataset ||--o{ ctl_watermark_state : "tracks_watermark"
-    meta_dataset ||--o{ ctl_dataset_state : "tracks_state"
+    meta_dataset ||--o{ meta_dataquality_rule : "1:M dataset_id"
 
-    meta_ingestion_group ||--o{ log_pipeline_run : "executes"
-    meta_dataset ||--o{ log_dataset_run : "records_metrics"
-    meta_dataquality_rule ||--o{ log_dq_rule_run : "validates_rule"
-    meta_dataset ||--o{ log_error_event : "logs_errors"
+    log_pipeline_run ||--o{ log_dataset_run : "1:M pipeline_run_id"
+    meta_dataset ||--o{ log_dataset_run : "1:M dataset_id"
+
+    log_dataset_run ||--o{ log_dq_rule_run : "1:M dataset_run_id"
+    meta_dataquality_rule ||--o{ log_dq_rule_run : "1:M dq_rule_id"
+
+    log_dataset_run ||--o{ log_error_event : "1:M dataset_run_id"
+    log_pipeline_run ||--o{ log_error_event : "1:M pipeline_run_id"
+
+    meta_schedule {
+        BIGINT schedule_id PK
+        VARCHAR schedule_name
+        VARCHAR cron_expression
+        BIT is_active
+        DATETIME2 created_date
+    }
+
+    meta_ingestion_group {
+        BIGINT ingestion_group_id PK
+        BIGINT schedule_id FK
+        VARCHAR group_name UK
+        INT execution_order
+        INT concurrency_limit
+        BIT is_active
+    }
+
+    meta_ingestion_group_dataset {
+        BIGINT group_dataset_id PK
+        BIGINT ingestion_group_id FK
+        BIGINT dataset_id FK
+        INT execution_priority
+        BIT is_active
+    }
 
     meta_source_system {
         BIGINT source_system_id PK
         VARCHAR source_system_code UK
         VARCHAR source_system_name
         VARCHAR source_system_type
+        VARCHAR connection_secret_name
         BIT is_active
     }
 
@@ -177,13 +283,15 @@ erDiagram
         BIGINT dataset_id PK
         BIGINT source_system_id FK
         VARCHAR dataset_name UK
-        VARCHAR target_silver_table_name
-        VARCHAR target_gold_table_name
+        VARCHAR domain_name
+        VARCHAR data_owner_email
         BIT is_active
+        DATETIME2 created_at
     }
 
     meta_dataset_src_to_brnz {
         BIGINT dataset_id PK_FK
+        VARCHAR source_schema_name
         VARCHAR source_table_name
         VARCHAR source_query
         VARCHAR destination_path
@@ -198,34 +306,130 @@ erDiagram
 
     meta_dataset_brnz_to_silver {
         BIGINT dataset_id PK_FK
-        VARCHAR source_table_lakehouse
+        VARCHAR source_lakehouse_name
         VARCHAR source_table_name
-        VARCHAR target_table_lakehouse
+        VARCHAR target_lakehouse_name
         VARCHAR target_table_name
         VARCHAR key_columns
+        VARCHAR partition_columns
         VARCHAR merge_query
+        BIT deduplication_enabled
+    }
+
+    meta_dataset_silver_to_gold {
+        BIGINT dataset_id PK_FK
+        VARCHAR target_gold_schema
+        VARCHAR target_gold_table_name
+        VARCHAR table_type
+        VARCHAR business_logic_sql
+        VARCHAR scd_type
+        VARCHAR surrogate_key_column
+    }
+
+    ctl_dataset_state {
+        BIGINT dataset_id PK_FK
+        VARCHAR current_status
+        DATETIME2 last_successful_run
+        DATETIME2 last_failed_run
+        VARCHAR last_execution_id
+        INT retry_count
+        DATETIME2 updated_at
     }
 
     ctl_watermark_state {
-        BIGINT watermark_id PK
-        BIGINT dataset_id FK
+        BIGINT dataset_id PK_FK
         VARCHAR watermark_column_name
         VARCHAR watermark_value
+        VARCHAR watermark_data_type
         DATETIME2 last_extracted_timestamp
+        DATETIME2 updated_at
+    }
+
+    meta_dataquality_rule {
+        BIGINT dq_rule_id PK
+        BIGINT dataset_id FK
+        VARCHAR rule_name
+        VARCHAR rule_type
+        VARCHAR target_column
+        VARCHAR rule_expression
+        VARCHAR error_threshold_action
+        BIT is_active
+    }
+
+    log_pipeline_run {
+        BIGINT pipeline_run_id PK
+        BIGINT ingestion_group_id FK
+        VARCHAR fabric_pipeline_id
+        VARCHAR pipeline_status
+        DATETIME2 start_time
+        DATETIME2 end_time
+        INT total_datasets
+        INT failed_datasets
     }
 
     log_dataset_run {
         BIGINT dataset_run_id PK
+        BIGINT pipeline_run_id FK
         BIGINT dataset_id FK
-        VARCHAR status
+        VARCHAR execution_status
         BIGINT rows_read
         BIGINT rows_inserted
         BIGINT rows_updated
         BIGINT rows_rejected
         DATETIME2 start_time
         DATETIME2 end_time
+        VARCHAR error_message
+    }
+
+    log_dq_rule_run {
+        BIGINT dq_run_id PK
+        BIGINT dataset_run_id FK
+        BIGINT dq_rule_id FK
+        VARCHAR evaluation_status
+        BIGINT total_rows_evaluated
+        BIGINT failing_rows_count
+        VARCHAR failure_sample_json
+        DATETIME2 evaluated_at
+    }
+
+    log_error_event {
+        BIGINT error_event_id PK
+        BIGINT pipeline_run_id FK
+        BIGINT dataset_run_id FK
+        VARCHAR error_severity
+        VARCHAR error_component
+        VARCHAR error_code
+        VARCHAR error_message
+        VARCHAR stack_trace
+        DATETIME2 logged_at
     }
 ```
+
+---
+
+### 3.3 Physical Entity Relationship Cardinality Matrix
+
+The following table summarizes all 14 physical relationships modeled in the metadata catalog:
+
+| # | Parent Table | Child Table | Foreign Key Column | Cardinality | Architectural Purpose & Rationale |
+| :---: | :--- | :--- | :--- | :---: | :--- |
+| **1** | `meta_schedule` | `meta_ingestion_group` | `schedule_id` | **1 : Many** | One cron schedule triggers multiple parallel or sequential ingestion groups. |
+| **2** | `meta_source_system` | `meta_dataset` | `source_system_id` | **1 : Many** | A source system (e.g. AS400 DB2) owns multiple datasets (e.g. `F0911`, `F4211`). |
+| **3** | `meta_ingestion_group` | `meta_ingestion_group_dataset` | `ingestion_group_id` | **1 : Many** | An ingestion group orchestrates multiple assigned datasets. |
+| **4** | `meta_dataset` | `meta_ingestion_group_dataset` | `dataset_id` | **1 : Many** | Associative table maps datasets to groups with explicit execution priority. |
+| **5** | `meta_dataset` | `meta_dataset_src_to_brnz` | `dataset_id` | **1 : 1** | Strict 1:1 subtype containing source extraction and Bronze Lakehouse landing configurations. |
+| **6** | `meta_dataset` | `meta_dataset_brnz_to_silver` | `dataset_id` | **1 : 1** | Strict 1:1 subtype containing Silver cleansing, deduplication, and Delta merge specifications. |
+| **7** | `meta_dataset` | `meta_dataset_silver_to_gold` | `dataset_id` | **1 : 1** | Strict 1:1 subtype containing Gold dimensional modeling, fact/dimension logic, and SCD rules. |
+| **8** | `meta_dataset` | `ctl_dataset_state` | `dataset_id` | **1 : 1** | Operational runtime state tracking current execution status, locks, and retry counts. |
+| **9** | `meta_dataset` | `ctl_watermark_state` | `dataset_id` | **1 : 1** | High-watermark tracking incremental extract boundaries, delta values, and timestamps. |
+| **10** | `meta_dataset` | `meta_dataquality_rule` | `dataset_id` | **1 : Many** | Datasets can have multiple active data quality validation rules (null checks, regex, range). |
+| **11** | `meta_ingestion_group` | `log_pipeline_run` | `ingestion_group_id` | **1 : Many** | Each pipeline run logs its overall orchestration metrics under its parent ingestion group. |
+| **12** | `log_pipeline_run` | `log_dataset_run` | `pipeline_run_id` | **1 : Many** | A pipeline run orchestrates many dataset runs; tracks rows read, inserted, updated, and rejected. |
+| **13** | `meta_dataset` | `log_dataset_run` | `dataset_id` | **1 : Many** | Every dataset execution is recorded against the master dataset catalog for historical audit. |
+| **14** | `log_dataset_run` | `log_dq_rule_run` | `dataset_run_id` | **1 : Many** | Detailed DQ evaluation outcomes per rule evaluated during each specific dataset run. |
+| **15** | `meta_dataquality_rule` | `log_dq_rule_run` | `dq_rule_id` | **1 : Many** | Historical execution performance and failure rates for each specific DQ rule. |
+| **16** | `log_dataset_run` | `log_error_event` | `dataset_run_id` | **1 : Many** | Granular failure events, error codes, and exception stack traces captured per dataset run. |
+| **17** | `log_pipeline_run` | `log_error_event` | `pipeline_run_id` | **1 : Many** | Orchestration-level pipeline failures not tied to a specific dataset (e.g. gateway timeouts). |
 
 ---
 
@@ -1229,7 +1433,13 @@ flowchart TD
     LH_SILVER_NRT --> GOLD
 ```
 
+> [!TIP]
+> **On-Premises Data Gateway (OPDG) Infrastructure Setup:**  
+> For the 58 batch tables extracted via the Fabric ODBC Copy Pipeline, secure hybrid connectivity to IBM AS400 DB2 (`10.242.2.25`) is established using the standard On-Premises Data Gateway (`gwips-fabric-prod-01`) and the official 64-bit IBM i Access (ACS) ODBC Driver. For the complete VM prerequisites, network firewall port validation (446, 449, 8471), gateway tuning (`SpoolingDirectory`), and Fabric connection setup (`conn-as400-db2-prod`), see:  
+> 👉 **[On-Premises Data Gateway Installation & Configuration Guide](file:///Users/chandu/Documents/Python_practice/Fabric/docs/additional_docs/IPS_On_Premises_Data_Gateway_Installation_and_Configuration_Guide.md)**.
+
 ---
+
 
 ### 8.2 Key Architectural Justifications
 
