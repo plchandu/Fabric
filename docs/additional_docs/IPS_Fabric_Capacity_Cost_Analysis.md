@@ -111,3 +111,11 @@ Once project implementation and go-live are complete, SIT and UAT are decommissi
    - The moment UAT sign-off and cutover occur for all the modules, instantly scale the Non-Prod resource in the Azure portal from **F128 to F32** via a single click or ARM/Bicep template.
    - **At Steady State:**
      - Purchase a **1-Year F32 Reservation ($2,501/mo)**.
+
+---
+
+## Related Documentation & ALM Governance
+> [!TIP]
+> For details on developer vs. consumer Power BI Pro licensing costs ($14/user/mo), non-production F32 UAT testing solutions, and the 3-tier Application Lifecycle Management (ALM) access governance matrix, refer to:  
+> 👉 **[Power BI Licensing, Fabric Capacity Planning & ALM Strategy Guide](file:///Users/chandu/Documents/Python_practice/Fabric/docs/additional_docs/PowerBI_Licensing_Fabric_Capacity_and_ALM_Strategy_Guide.md)**.
+
