@@ -11,6 +11,59 @@
 
 The following **16 core Azure & Microsoft services** power the IPS BI Modernization platform across Networking, Compute, Storage, Security, Governance, and Operations:
 
+                         BUSINESS SYSTEMS
+                              │
+            ┌─────────────────┼──────────────────┐
+            │                 │                  │
+            ▼                 ▼                  ▼
+       Salesforce           JDE              SQL Server
+          CRM              ERP/DB2             DW
+            │                 │                  │
+            │                 │                  │
+            └─────────────────┼──────────────────┘
+                              │
+                              ▼
+                    Fabric Data Factory
+                              │
+                  ┌───────────┴───────────┐
+                  │                       │
+             Gateway Cluster         API Connectors
+                  │                       │
+                  └───────────┬───────────┘
+                              ▼
+                         OneLake
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+                 Bronze               Metadata
+                    │
+                    ▼
+                 Silver
+                    │
+             PySpark / SQL
+                    │
+                    ▼
+                  Gold
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+     Semantic Model      Power BI
+          │                   │
+          └─────────┬─────────┘
+                    ▼
+             Business Users
+
+       ┌─────────────────────────────┐
+       │ Cross-cutting               │
+       │                             │
+       │ Entra ID                    │
+       │ Key Vault                   │
+       │ Purview                     │
+       │ Defender / Azure Policy     │
+       │ Monitor / Log Analytics     │
+       │ Networking / Firewall       │
+       └─────────────────────────────┘
+
 ```mermaid
 graph TD
     subgraph "1. SaaS Data & Analytics"
@@ -78,7 +131,7 @@ graph TD
 | :---: | :--- | :--- | :--- |
 | **9** | **Azure Virtual Machines (IaaS)** | Scalable on-demand cloud compute instances (Windows Server 2022). | Hosts the **On-Premises Data Gateway (OPDG)** cluster (`genie-fabric-prod-01`) and the 64-bit IBM i Access ODBC driver to query the on-premises AS400 DB2 database over outbound TLS 443. |
 | **10** | **Azure Data Lake Storage Gen2 (ADLS Gen2)** | Enterprise data lake storage with hierarchical namespace. | Underpins Microsoft Fabric OneLake storage and acts as the direct high-speed landing target for log-based Change Data Capture (CDC) streams before zero-copy shortcuts. |
-| **11** | **Azure Backup (Recovery Services Vault)** | Centralized data protection and backup service. | Provides automated image-level backups and disaster recovery protection for data gateway virtual machines and essential cloud infrastructure (`prod-backup-southindia-rsv`). |
+| **11** | **Azure Backup (Recovery Services Vault)** | Centralized data protection and backup service. | Provides automated image-level backups and disaster recovery protection for data gateway virtual machines and essential cloud infrastructure (`prod-backup-centralus-rsv`). |
 
 ---
 
