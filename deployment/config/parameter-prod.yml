@@ -1,0 +1,40 @@
+# -------------------------------------------------------------------------------------------------
+# Environment Parameters: PRODUCTION (PROD)
+# Target Workspace: ws_ips_erp_bronze_prod / ws_ips_erp_silver_prod / ws_ips_erp_gold_prod
+# -------------------------------------------------------------------------------------------------
+environment: PROD
+
+workspace:
+  name: "ws-ips-bi-prod"
+  capacity_id: "fabric-capacity-f32-prod"
+  region: "centralus"
+
+lakehouses:
+  bronze_name: "lh_ips_bronze"
+  silver_name: "lh_ips_silver"
+  gold_name: "lh_ips_gold"
+
+sql_databases:
+  metadata_metastore: "sqldb-meta-orch-prod"
+  sql_server_fqdn: "sqlsrv-meta-orch-prod.database.windows.net"
+
+key_vault:
+  vault_name: "ipskv-prod-chennai-01"
+  vault_uri: "https://ipskv-prod-chennai-01.vault.azure.net/"
+  secret_prefix: "prod-"
+
+gateway:
+  cluster_name: "gwips-fabric-prod-01"
+  as400_connection_name: "conn-as400-db2-prod"
+  as400_host: "10.242.2.25"
+  as400_port: 446
+  as400_library: "CRPOTA"
+
+variable_library:
+  name: "lib_orch_config"
+  variables:
+    ENV_TARGET_LAKEHOUSE: "lh_ips_bronze"
+    ENV_STAGE: "PROD"
+    ENV_LOG_LEVEL: "WARN"
+    ENV_KEY_VAULT_URI: "https://ipskv-prod-chennai-01.vault.azure.net/"
+    ENV_MAX_PARALLEL_TABLES: "16"

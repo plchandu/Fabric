@@ -1,0 +1,110 @@
+name: "CD - Deploy Microsoft Fabric Platform"
+
+on:
+  push:
+    branches:
+      - main
+      - release/**
+      - dev
+    paths:
+      - "src/**"
+      - "deployment/**"
+      - "requirements*.txt"
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target Deployment Environment"
+        required: true
+        default: "DEV"
+        type: choice
+        options:
+          - DEV
+          - UAT
+          - PROD
+      dry_run:
+        description: "Dry Run Simulation (Validate without writing changes)"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: fabric-deploy-${{ github.event.inputs.target_env || (github.ref_name == 'main' && 'PROD') || (startsWith(github.ref_name, 'release/') && 'UAT') || 'DEV' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: "Deploy to ${{ github.event.inputs.target_env || (github.ref_name == 'main' && 'PROD') || (startsWith(github.ref_name, 'release/') && 'UAT') || 'DEV' }}"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_env || (github.ref_name == 'main' && 'PROD') || (startsWith(github.ref_name, 'release/') && 'UAT') || 'DEV' }}
+
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python Runtime (3.11)"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: "Install CI/CD Dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r deployment/requirements-cicd.txt
+
+      - name: "Pre-Deployment Security & Repository Audit"
+        run: |
+          python deployment/validate_repo.py
+
+      - name: "Determine Target Environment"
+        id: env_step
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.event.inputs.target_env }}"
+            DRY_RUN="${{ github.event.inputs.dry_run }}"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            TARGET="PROD"
+            DRY_RUN="false"
+          elif [[ "${{ github.ref_name }}" =~ ^release/ ]]; then
+            TARGET="UAT"
+            DRY_RUN="false"
+          else
+            TARGET="DEV"
+            DRY_RUN="false"
+          fi
+          echo "target_env=$TARGET" >> $GITHUB_OUTPUT
+          echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
+          echo "Target Environment determined as: $TARGET (Dry Run: $DRY_RUN)"
+
+      - name: "Execute Fabric Workspace Deployment"
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          FABRIC_WORKSPACE_ID: ${{ vars.FABRIC_WORKSPACE_ID }}
+          FABRIC_ENVIRONMENT: ${{ steps.env_step.outputs.target_env }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ steps.env_step.outputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python deployment/deploy_workspace.py --environment ${{ steps.env_step.outputs.target_env }} $DRY_RUN_FLAG
+
+      - name: "Execute Post-Deployment Health Verification"
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          FABRIC_WORKSPACE_ID: ${{ vars.FABRIC_WORKSPACE_ID }}
+          FABRIC_ENVIRONMENT: ${{ steps.env_step.outputs.target_env }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ steps.env_step.outputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          python deployment/post_deploy.py --environment ${{ steps.env_step.outputs.target_env }} $DRY_RUN_FLAG

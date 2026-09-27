@@ -1,0 +1,40 @@
+# -------------------------------------------------------------------------------------------------
+# Environment Parameters: USER ACCEPTANCE TESTING (UAT / SIT)
+# Target Workspace: ws_ips_erp_bronze_uat / ws_ips_erp_silver_uat / ws_ips_erp_gold_uat
+# -------------------------------------------------------------------------------------------------
+environment: UAT
+
+workspace:
+  name: "ws-ips-bi-uat"
+  capacity_id: "fabric-capacity-f32-uat"
+  region: "centralus"
+
+lakehouses:
+  bronze_name: "lh_ips_bronze_uat"
+  silver_name: "lh_ips_silver_uat"
+  gold_name: "lh_ips_gold_uat"
+
+sql_databases:
+  metadata_metastore: "sqldb-meta-orch-uat"
+  sql_server_fqdn: "sqlsrv-meta-orch-uat.database.windows.net"
+
+key_vault:
+  vault_name: "ipskv-uat-chennai-01"
+  vault_uri: "https://ipskv-uat-chennai-01.vault.azure.net/"
+  secret_prefix: "uat-"
+
+gateway:
+  cluster_name: "gwips-fabric-uat-01"
+  as400_connection_name: "conn-as400-db2-uat"
+  as400_host: "10.242.2.25"
+  as400_port: 446
+  as400_library: "CRPTEST"
+
+variable_library:
+  name: "lib_orch_config"
+  variables:
+    ENV_TARGET_LAKEHOUSE: "lh_ips_bronze_uat"
+    ENV_STAGE: "UAT"
+    ENV_LOG_LEVEL: "INFO"
+    ENV_KEY_VAULT_URI: "https://ipskv-uat-chennai-01.vault.azure.net/"
+    ENV_MAX_PARALLEL_TABLES: "8"

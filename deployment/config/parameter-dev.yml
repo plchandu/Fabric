@@ -1,0 +1,40 @@
+# -------------------------------------------------------------------------------------------------
+# Environment Parameters: DEVELOPMENT (DEV)
+# Target Workspace: ws_ips_erp_bronze_dev / ws_ips_erp_silver_dev / ws_ips_erp_gold_dev
+# -------------------------------------------------------------------------------------------------
+environment: DEV
+
+workspace:
+  name: "ws-ips-bi-dev"
+  capacity_id: "fabric-capacity-f32-dev"
+  region: "centralus"
+
+lakehouses:
+  bronze_name: "lh_ips_bronze_dev"
+  silver_name: "lh_ips_silver_dev"
+  gold_name: "lh_ips_gold_dev"
+
+sql_databases:
+  metadata_metastore: "sqldb-meta-orch-dev"
+  sql_server_fqdn: "sqlsrv-meta-orch-dev.database.windows.net"
+
+key_vault:
+  vault_name: "ipskv-dev-chennai-01"
+  vault_uri: "https://ipskv-dev-chennai-01.vault.azure.net/"
+  secret_prefix: "dev-"
+
+gateway:
+  cluster_name: "gwips-fabric-dev-01"
+  as400_connection_name: "conn-as400-db2-dev"
+  as400_host: "10.242.2.25"
+  as400_port: 446
+  as400_library: "CRPDTA"
+
+variable_library:
+  name: "lib_orch_config"
+  variables:
+    ENV_TARGET_LAKEHOUSE: "lh_ips_bronze_dev"
+    ENV_STAGE: "DEV"
+    ENV_LOG_LEVEL: "DEBUG"
+    ENV_KEY_VAULT_URI: "https://ipskv-dev-chennai-01.vault.azure.net/"
+    ENV_MAX_PARALLEL_TABLES: "4"
