@@ -1,0 +1,165 @@
+{
+  "name": "pl_master_batch_orchestrator",
+  "properties": {
+    "description": "Master scheduled batch orchestration pipeline executing twice daily (09:00 & 17:00 CET). Coordinates 58 AS400 DB2 tables across dimensions, facts, Silver cleansing, and Gold Kimball star modeling.",
+    "parameters": {
+      "TriggerType": {
+        "type": "string",
+        "defaultValue": "Scheduled"
+      },
+      "ExecutionEnvironment": {
+        "type": "string",
+        "defaultValue": "PROD"
+      }
+    },
+    "variables": {
+      "MasterRunId": {
+        "type": "String",
+        "defaultValue": ""
+      },
+      "BatchStartTime": {
+        "type": "String",
+        "defaultValue": ""
+      }
+    },
+    "activities": [
+      {
+        "name": "Set_Batch_Start_Time",
+        "type": "SetVariable",
+        "dependsOn": [],
+        "typeProperties": {
+          "variableName": "BatchStartTime",
+          "value": {
+            "value": "@utcnow()",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "Execute_Batch_Dimensions",
+        "type": "ExecutePipeline",
+        "dependsOn": [
+          {
+            "activity": "Set_Batch_Start_Time",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "pipeline": {
+            "referenceName": "pl_ingest_group",
+            "type": "PipelineReference"
+          },
+          "waitOnCompletion": true,
+          "parameters": {
+            "group_code": "IG_AS400_BATCH_DIM",
+            "parent_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Execute_Batch_Facts",
+        "type": "ExecutePipeline",
+        "dependsOn": [
+          {
+            "activity": "Execute_Batch_Dimensions",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "pipeline": {
+            "referenceName": "pl_ingest_group",
+            "type": "PipelineReference"
+          },
+          "waitOnCompletion": true,
+          "parameters": {
+            "group_code": "IG_AS400_BATCH_FACT",
+            "parent_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Execute_Silver_Conformation_DQ",
+        "type": "FabricNotebook",
+        "dependsOn": [
+          {
+            "activity": "Execute_Batch_Facts",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "notebookId": "01_silver_cleansing_dq",
+          "parameters": {
+            "p_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            },
+            "p_execution_mode": "BATCH"
+          }
+        }
+      },
+      {
+        "name": "Execute_Gold_Star_Schema_Mart",
+        "type": "FabricNotebook",
+        "dependsOn": [
+          {
+            "activity": "Execute_Silver_Conformation_DQ",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "notebookId": "01_gold_financial_gl_mart",
+          "parameters": {
+            "p_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Notify_Batch_Failure",
+        "type": "WebActivity",
+        "dependsOn": [
+          {
+            "activity": "Execute_Batch_Dimensions",
+            "dependencyConditions": ["Failed"]
+          },
+          {
+            "activity": "Execute_Batch_Facts",
+            "dependencyConditions": ["Failed"]
+          },
+          {
+            "activity": "Execute_Silver_Conformation_DQ",
+            "dependencyConditions": ["Failed"]
+          },
+          {
+            "activity": "Execute_Gold_Star_Schema_Mart",
+            "dependencyConditions": ["Failed"]
+          }
+        ],
+        "typeProperties": {
+          "method": "POST",
+          "url": "https://prod-00.eastus2.logic.azure.com/workflows/alerts/triggers/manual/paths/invoke",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "value": "{\n  \"alertType\": \"BATCH_ORCHESTRATION_FAILURE\",\n  \"pipelineName\": \"@{pipeline().Pipeline}\",\n  \"runId\": \"@{pipeline().RunId}\",\n  \"startTime\": \"@{variables('BatchStartTime')}\",\n  \"failureTime\": \"@{utcnow()}\",\n  \"environment\": \"@{pipeline().parameters.ExecutionEnvironment}\"\n}",
+            "type": "Expression"
+          }
+        }
+      }
+    ],
+    "annotations": [
+      "Layer:Orchestration",
+      "Domain:EnterpriseBatch",
+      "Source:AS400_DB2"
+    ]
+  }
+}

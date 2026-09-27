@@ -1,0 +1,156 @@
+{
+  "name": "pl_ingest_group",
+  "properties": {
+    "description": "Dynamic metadata-driven worker pipeline. Queries sqldb-meta-orch-dev for active datasets mapped to the requested group_code, checks high watermarks, and executes parallel Copy Activities or PySpark workers across the On-Premises Data Gateway.",
+    "parameters": {
+      "group_code": {
+        "type": "string",
+        "defaultValue": "IG_AS400_BATCH_DIM"
+      },
+      "parent_pipeline_run_id": {
+        "type": "string",
+        "defaultValue": "MANUAL_DEV"
+      }
+    },
+    "variables": {
+      "DatasetCount": {
+        "type": "Integer",
+        "defaultValue": 0
+      }
+    },
+    "activities": [
+      {
+        "name": "Lookup_Active_Datasets_For_Group",
+        "type": "Lookup",
+        "dependsOn": [],
+        "typeProperties": {
+          "source": {
+            "type": "SqlDatabaseSource",
+            "sqlReaderQuery": {
+              "value": "SELECT d.dataset_name, s.source_schema_name, s.source_table_name, s.destination_file_type, s.bronze_table_name, s.key_columns, s.source_watermark_column, ISNULL(w.current_watermark_value, '1900-01-01') AS last_watermark_val FROM meta.ingestion_group g INNER JOIN meta.ingestion_group_dataset igd ON g.ingestion_group_id = igd.ingestion_group_id INNER JOIN meta.dataset d ON igd.dataset_id = d.dataset_id INNER JOIN meta.dataset_src_to_brnz s ON d.dataset_id = s.dataset_id LEFT JOIN ctl.watermark_state w ON d.dataset_id = w.dataset_id WHERE g.group_code = '@{pipeline().parameters.group_code}' AND g.is_active = 1 AND igd.is_active = 1 AND d.is_active = 1",
+              "type": "Expression"
+            }
+          },
+          "dataset": {
+            "referenceName": "ds_sqldb_meta_orch",
+            "type": "DatasetReference"
+          },
+          "firstRowOnly": false
+        }
+      },
+      {
+        "name": "ForEach_Dataset_In_Group",
+        "type": "ForEach",
+        "dependsOn": [
+          {
+            "activity": "Lookup_Active_Datasets_For_Group",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "items": {
+            "value": "@activity('Lookup_Active_Datasets_For_Group').output.value",
+            "type": "Expression"
+          },
+          "isSequential": false,
+          "batchCount": 8,
+          "activities": [
+            {
+              "name": "Copy_AS400_To_Bronze_Delta",
+              "type": "Copy",
+              "typeProperties": {
+                "source": {
+                  "type": "OdbcSource",
+                  "query": {
+                    "value": "SELECT * FROM @{item().source_schema_name}.@{item().source_table_name}",
+                    "type": "Expression"
+                  }
+                },
+                "sink": {
+                  "type": "LakehouseTableSink",
+                  "tableActionOption": "Append",
+                  "partitionOption": "None"
+                },
+                "enableStaging": false
+              },
+              "inputs": [
+                {
+                  "referenceName": "ds_as400_odbc_source",
+                  "type": "DatasetReference"
+                }
+              ],
+              "outputs": [
+                {
+                  "referenceName": "ds_lakehouse_bronze_target",
+                  "type": "DatasetReference",
+                  "parameters": {
+                    "TableName": {
+                      "value": "@item().bronze_table_name",
+                      "type": "Expression"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Log_Dataset_Execution_Success",
+              "type": "SqlServerStoredProcedure",
+              "dependsOn": [
+                {
+                  "activity": "Copy_AS400_To_Bronze_Delta",
+                  "dependencyConditions": ["Succeeded"]
+                }
+              ],
+              "typeProperties": {
+                "storedProcedureName": "log.usp_record_dataset_run",
+                "storedProcedureParameters": {
+                  "pipeline_run_id": {
+                    "value": {
+                      "value": "@pipeline().parameters.parent_pipeline_run_id",
+                      "type": "Expression"
+                    },
+                    "type": "String"
+                  },
+                  "dataset_name": {
+                    "value": {
+                      "value": "@item().dataset_name",
+                      "type": "Expression"
+                    },
+                    "type": "String"
+                  },
+                  "rows_read": {
+                    "value": {
+                      "value": "@activity('Copy_AS400_To_Bronze_Delta').output.dataRead",
+                      "type": "Expression"
+                    },
+                    "type": "Int64"
+                  },
+                  "rows_written": {
+                    "value": {
+                      "value": "@activity('Copy_AS400_To_Bronze_Delta').output.dataWritten",
+                      "type": "Expression"
+                    },
+                    "type": "Int64"
+                  },
+                  "status": {
+                    "value": "SUCCESS",
+                    "type": "String"
+                  }
+                }
+              },
+              "linkedServiceName": {
+                "referenceName": "ls_sqldb_meta_orch",
+                "type": "LinkedServiceReference"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "annotations": [
+      "Layer:Worker",
+      "Pattern:MetadataDriven",
+      "Engine:CopyActivity"
+    ]
+  }
+}

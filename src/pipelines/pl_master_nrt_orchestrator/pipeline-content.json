@@ -1,0 +1,169 @@
+{
+  "name": "pl_master_nrt_orchestrator",
+  "properties": {
+    "description": "Master Near Real-Time (NRT) micro-batch orchestration pipeline running every 5-10 minutes. Processes change logs from 39 CDC tables (Fivetran/OneLake), executes Silver cleansing, and commits into Gold Delta tables within a 15-minute SLA.",
+    "parameters": {
+      "TriggerFrequencyMinutes": {
+        "type": "int",
+        "defaultValue": 5
+      },
+      "MaxLatencyBudgetMinutes": {
+        "type": "int",
+        "defaultValue": 15
+      },
+      "ExecutionEnvironment": {
+        "type": "string",
+        "defaultValue": "PROD"
+      }
+    },
+    "variables": {
+      "NRTRunStartTime": {
+        "type": "String",
+        "defaultValue": ""
+      },
+      "CDCRecordsFound": {
+        "type": "Boolean",
+        "defaultValue": true
+      }
+    },
+    "activities": [
+      {
+        "name": "Record_NRT_Start_Time",
+        "type": "SetVariable",
+        "dependsOn": [],
+        "typeProperties": {
+          "variableName": "NRTRunStartTime",
+          "value": {
+            "value": "@utcnow()",
+            "type": "Expression"
+          }
+        }
+      },
+      {
+        "name": "Execute_NRT_Dimensions",
+        "type": "ExecutePipeline",
+        "dependsOn": [
+          {
+            "activity": "Record_NRT_Start_Time",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "pipeline": {
+            "referenceName": "pl_ingest_group",
+            "type": "PipelineReference"
+          },
+          "waitOnCompletion": true,
+          "parameters": {
+            "group_code": "IG_AS400_NRT_DIM",
+            "parent_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Execute_NRT_Facts",
+        "type": "ExecutePipeline",
+        "dependsOn": [
+          {
+            "activity": "Execute_NRT_Dimensions",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "pipeline": {
+            "referenceName": "pl_ingest_group",
+            "type": "PipelineReference"
+          },
+          "waitOnCompletion": true,
+          "parameters": {
+            "group_code": "IG_AS400_NRT_FACT",
+            "parent_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Execute_Silver_NRT_Delta_Merge",
+        "type": "FabricNotebook",
+        "dependsOn": [
+          {
+            "activity": "Execute_NRT_Facts",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "notebookId": "01_silver_cleansing_dq",
+          "parameters": {
+            "p_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            },
+            "p_execution_mode": "NRT_MICROBATCH"
+          }
+        }
+      },
+      {
+        "name": "Execute_Gold_NRT_Delta_Merge",
+        "type": "FabricNotebook",
+        "dependsOn": [
+          {
+            "activity": "Execute_Silver_NRT_Delta_Merge",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "notebookId": "01_gold_financial_gl_mart",
+          "parameters": {
+            "p_pipeline_run_id": {
+              "value": "@pipeline().RunId",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Alert_NRT_SLA_Breach",
+        "type": "WebActivity",
+        "dependsOn": [
+          {
+            "activity": "Execute_NRT_Dimensions",
+            "dependencyConditions": ["Failed"]
+          },
+          {
+            "activity": "Execute_NRT_Facts",
+            "dependencyConditions": ["Failed"]
+          },
+          {
+            "activity": "Execute_Silver_NRT_Delta_Merge",
+            "dependencyConditions": ["Failed"]
+          },
+          {
+            "activity": "Execute_Gold_NRT_Delta_Merge",
+            "dependencyConditions": ["Failed"]
+          }
+        ],
+        "typeProperties": {
+          "method": "POST",
+          "url": "https://prod-00.eastus2.logic.azure.com/workflows/alerts/triggers/manual/paths/invoke",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "value": "{\n  \"alertType\": \"NRT_SLA_BREACH_OR_FAILURE\",\n  \"pipelineName\": \"@{pipeline().Pipeline}\",\n  \"runId\": \"@{pipeline().RunId}\",\n  \"maxSlaBudget\": @{pipeline().parameters.MaxLatencyBudgetMinutes},\n  \"startTime\": \"@{variables('NRTRunStartTime')}\",\n  \"failureTime\": \"@{utcnow()}\"\n}",
+            "type": "Expression"
+          }
+        }
+      }
+    ],
+    "annotations": [
+      "Layer:Orchestration",
+      "Mode:NearRealTime",
+      "SLA:15Min"
+    ]
+  }
+}

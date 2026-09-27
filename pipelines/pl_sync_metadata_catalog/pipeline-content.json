@@ -1,0 +1,115 @@
+{
+  "name": "pl_sync_metadata_catalog",
+  "properties": {
+    "description": "Metadata synchronization and framework deployment pipeline. Reads Ingestion_metadata_load_template.xlsx from OneLake landing, validates schema definitions, loads stage tables, and merges authoritative records into meta.* catalog tables.",
+    "parameters": {
+      "TemplateFilePath": {
+        "type": "string",
+        "defaultValue": "Files/metadata_templates/Ingestion_metadata_load_template.xlsx"
+      },
+      "AutoPromoteToProduction": {
+        "type": "bool",
+        "defaultValue": true
+      }
+    },
+    "variables": {
+      "SyncTimestamp": {
+        "type": "String",
+        "defaultValue": ""
+      }
+    },
+    "activities": [
+      {
+        "name": "Check_Template_Exists",
+        "type": "GetMetadata",
+        "dependsOn": [],
+        "typeProperties": {
+          "dataset": {
+            "referenceName": "ds_metadata_template_lakehouse",
+            "type": "DatasetReference"
+          },
+          "fieldList": [
+            "exists",
+            "size",
+            "itemName"
+          ],
+          "storeSettings": {
+            "type": "LakehouseReadSettings",
+            "recursive": false
+          }
+        }
+      },
+      {
+        "name": "Execute_Metadata_Staging_Script",
+        "type": "FabricNotebook",
+        "dependsOn": [
+          {
+            "activity": "Check_Template_Exists",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "notebookId": "nb_sync_metadata_template",
+          "parameters": {
+            "p_template_path": {
+              "value": "@pipeline().parameters.TemplateFilePath",
+              "type": "Expression"
+            }
+          }
+        }
+      },
+      {
+        "name": "Merge_Stage_To_Meta_Catalog",
+        "type": "SqlServerStoredProcedure",
+        "dependsOn": [
+          {
+            "activity": "Execute_Metadata_Staging_Script",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "storedProcedureName": "stage.usp_merge_metadata_catalog",
+          "storedProcedureParameters": {
+            "execution_user": {
+              "value": {
+                "value": "@pipeline().Pipeline",
+                "type": "Expression"
+              },
+              "type": "String"
+            }
+          }
+        },
+        "linkedServiceName": {
+          "referenceName": "ls_sqldb_meta_orch",
+          "type": "LinkedServiceReference"
+        }
+      },
+      {
+        "name": "Notify_Catalog_Sync_Success",
+        "type": "WebActivity",
+        "dependsOn": [
+          {
+            "activity": "Merge_Stage_To_Meta_Catalog",
+            "dependencyConditions": ["Succeeded"]
+          }
+        ],
+        "typeProperties": {
+          "method": "POST",
+          "url": "https://prod-00.eastus2.logic.azure.com/workflows/alerts/triggers/manual/paths/invoke",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "value": "{\n  \"alertType\": \"METADATA_CATALOG_SYNC_SUCCESS\",\n  \"pipelineName\": \"@{pipeline().Pipeline}\",\n  \"runId\": \"@{pipeline().RunId}\",\n  \"completedAt\": \"@{utcnow()}\"\n}",
+            "type": "Expression"
+          }
+        }
+      }
+    ],
+    "annotations": [
+      "Layer:Governance",
+      "Domain:MetadataFramework",
+      "Metastore:sqldb-meta-orch"
+    ]
+  }
+}

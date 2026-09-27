@@ -1,0 +1,106 @@
+{
+  "name": "pl_ingest_bronze_flat_files",
+  "properties": {
+    "description": "Event-driven automated flat file ingestion pipeline triggered dynamically by Data Activator upon OneLake BlobCreated system events. Invokes nb_bronze_flat_file_ingestion and performs atomic archival.",
+    "parameters": {
+      "TriggeredFileName": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "TriggeredFilePath": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "SourceBlobUrl": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "EventTimestamp": {
+        "type": "string",
+        "defaultValue": ""
+      }
+    },
+    "variables": {
+      "PipelineRunStatus": {
+        "type": "String",
+        "defaultValue": "Initiated"
+      }
+    },
+    "activities": [
+      {
+        "name": "Check_Parameter_Supplied",
+        "type": "IfCondition",
+        "dependsOn": [],
+        "typeProperties": {
+          "expression": {
+            "value": "@and(not(empty(pipeline().parameters.TriggeredFileName)), not(empty(pipeline().parameters.TriggeredFilePath)))",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "Execute_Bronze_Ingestion_Notebook",
+              "type": "FabricNotebook",
+              "typeProperties": {
+                "notebookId": "nb_bronze_flat_file_ingestion",
+                "parameters": {
+                  "p_file_name": {
+                    "value": "@pipeline().parameters.TriggeredFileName",
+                    "type": "Expression"
+                  },
+                  "p_file_path": {
+                    "value": "@pipeline().parameters.TriggeredFilePath",
+                    "type": "Expression"
+                  },
+                  "p_event_timestamp": {
+                    "value": "@pipeline().parameters.EventTimestamp",
+                    "type": "Expression"
+                  },
+                  "p_pipeline_run_id": {
+                    "value": "@pipeline().RunId",
+                    "type": "Expression"
+                  }
+                }
+              }
+            }
+          ],
+          "ifFalseActivities": [
+            {
+              "name": "Fail_Missing_Parameters",
+              "type": "Fail",
+              "typeProperties": {
+                "message": "Pipeline invoked without required parameters (TriggeredFileName or TriggeredFilePath).",
+                "errorCode": "INVALID_PARAMETERS"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "Notify_Failure_Teams_Email",
+        "type": "WebActivity",
+        "dependsOn": [
+          {
+            "activity": "Check_Parameter_Supplied",
+            "dependencyConditions": ["Failed"]
+          }
+        ],
+        "typeProperties": {
+          "method": "POST",
+          "url": "https://prod-00.eastus2.logic.azure.com/workflows/alerts/triggers/manual/paths/invoke",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "value": "{\n  \"pipelineName\": \"@{pipeline().Pipeline}\",\n  \"runId\": \"@{pipeline().RunId}\",\n  \"fileName\": \"@{pipeline().parameters.TriggeredFileName}\",\n  \"filePath\": \"@{pipeline().parameters.TriggeredFilePath}\",\n  \"status\": \"Failed\",\n  \"errorMessage\": \"@{activity('Check_Parameter_Supplied').error?.message}\",\n  \"triggerTime\": \"@{utcnow()}\"\n}",
+            "type": "Expression"
+          }
+        }
+      }
+    ],
+    "annotations": [
+      "Layer:Bronze",
+      "Pattern:EventDriven",
+      "Domain:FlatFile"
+    ]
+  }
+}
